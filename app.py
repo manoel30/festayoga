@@ -1,34 +1,24 @@
 import streamlit as st
 import pandas as pd
-import os
+from streamlit_gsheets import GSheetsConnection
 
 # Configuração da página
 st.set_page_config(page_title="Arraiá do Grupo! 🌽", page_icon="🔥", layout="centered")
 
-## Com duas hashtags (Equivale ao st.header)
 st.markdown("#### 🔥 Confraternização São João YOGA! 🍿")
 st.write("Escolha o que você vai trazer para a nossa festa junina!")
 
-# Arquivo para simular o banco de dados localmente
-DATA_FILE = "itens_festa.csv"
+# 1. Estabelece a conexão com o Google Sheets
+# (Ele vai buscar a URL da planilha nas configurações secretas que faremos no Passo 3)
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Itens iniciais da festa se o arquivo não existir
-if not os.path.exists(DATA_FILE):
-    dados_iniciais = {
-        "Item": ["Bolo de Fubá", "Canjica/Canjiquinha", "Pamonha", "Laranja", "Quentão", "Refrigerante", "Salgados", "Doces Juninos (Paçoca/Pé de Moleque)"],
-        "Responsável": ["Disponível"] * 8
-    }
-    df = pd.DataFrame(dados_iniciais)
-    df.to_csv(DATA_FILE, index=False)
-
-# Carregar dados
-df = pd.read_csv(DATA_FILE)
+# 2. Lê os dados da planilha em tempo real (limpa o cache para sempre trazer o dado mais recente)
+df = conn.read(ttl=0)
 
 # Exibir a tabela atual de contribuições
 st.markdown("#### 📋 Lista de Comes & Bebes")
 st.dataframe(df, use_container_width=True)
 
-# LINHA DIVISÓRIA CORRIGIDA AQUI:
 st.divider()
 
 st.subheader("🙋‍♂️ Quero Contribuir!")
@@ -48,11 +38,13 @@ with st.form(key="form_festa"):
             if nome.strip() == "":
                 st.error("Por favor, digite seu nome para confirmar!")
             else:
-                # Atualiza o dataframe com o nome de quem escolheu
+                # Atualiza o dataframe na memória
                 df.loc[df["Item"] == item_escolhido, "Responsável"] = nome
-                df.to_csv(DATA_FILE, index=False)
+                
+                # 3. Salva o dataframe atualizado de volta na Planilha do Google!
+                conn.update(data=df)
+                
                 st.success(f"Uai, que beleza! {nome} garantiu o/a {item_escolhido}! 🎉")
-                st.sidebar.markdown("Atualizando...") # Apenas um feedback visual rápido
                 st.rerun()
     else:
         st.write("🥳 Eita! Todos os itens já foram preenchidos! Obrigado, pessoal!")
