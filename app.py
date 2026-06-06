@@ -10,16 +10,16 @@ st.markdown("#### 🔥 Confraternização São João YOGA! 🍿")
 st.write("Escolha o que você vai trazer para a nossa festa junina!")
 
 # =========================================================================
-# CONFIGURAÇÃO DO BANCO DE DADOS (CORRIGIDA)
+# CONFIGURAÇÃO DO BANCO DE DADOS
 # =========================================================================
 env_value = os.environ.get("DATABASE_URL")
 
-# Se o Render trouxer vazio, ou trouxer o texto "DATABASE_URL", ou não começar com postgres
+# Se o Render trouxer vazio, ou trouxer o texto literal "DATABASE_URL", ou não começar com postgres
 if not env_value or env_value == "DATABASE_URL" or not str(env_value).startswith("postgres"):
     try:
         DATABASE_URL = st.secrets["DATABASE_URL"]
     except Exception:
-        # Link Direto (Use a INTERNAL DATABASE URL se estiver no Render)
+        # Link Direto como última saída
         DATABASE_URL = "postgresql://banco_gestao_mh_user:7nDZqiN920jZKUiyssC5O3JtG9azi0aM@dpg-d8b35b4m0tmc73d5ovog-a.virginia-postgres.render.com:5432/arraia_db"
 else:
     DATABASE_URL = env_value
@@ -29,7 +29,8 @@ DATABASE_URL = str(DATABASE_URL).strip()
 
 def executar_query(query, retorno=False, valores=None):
     try:
-        conn = psycopg2.connect(str(DATABASE_URL).strip())
+        # CORREÇÃO CRÍTICA: Usando dsn= explicitamente para evitar o erro de caractere "="
+        conn = psycopg2.connect(dsn=DATABASE_URL)
         cur = conn.cursor()
         if valores:
             cur.execute(query, valores)
@@ -50,6 +51,9 @@ def executar_query(query, retorno=False, valores=None):
         st.error(f"Erro no banco: {e}")
         st.stop()
 
+# =========================================================================
+# ESTRUTURAÇÃO DO BANCO (CRIAÇÃO E POVOAMENTO INICIAL)
+# =========================================================================
 # Garantir existência da tabela
 executar_query("""
     CREATE TABLE IF NOT EXISTS itens_festa (
@@ -64,7 +68,7 @@ df_verificacao = executar_query("SELECT * FROM itens_festa", retorno=True)
 if df_verificacao is not None and df_verificacao.empty:
     itens_iniciais = [
         "Bolo de Fubá", "Canjica/Canjiquinha", "Pamonha", "Laranja", 
-        "Quentão", "Refrigerante", "Salgados", "Doces Juninos (Paçoca/Pé de Moleque)"
+        "Suco", "Refrigerante", "Salgados", "Doces Juninos (Paçoca/Pé de Moleque)"
     ]
     for item in itens_iniciais:
         executar_query("INSERT INTO itens_festa (item) VALUES (%s)", valores=(item,))
@@ -82,7 +86,7 @@ st.dataframe(df, use_container_width=True)
 st.divider()
 
 # =========================================================================
-# FORMULÁRIO 1: ESCOLHER ITEM EXISTENTE
+# FORMULÁRIO 1: ESCOLHER ITEM EXISTENTE DA PRÉ-LISTA
 # =========================================================================
 st.subheader("🙋‍♂️ Quero Contribuir com a Lista!")
 
@@ -92,7 +96,6 @@ itens_disponiveis = df[df["Responsável"] == "Disponível"]["Item"].tolist()
 
 if itens_disponiveis:
     item_escolhido = form1.selectbox("O que você vai levar?", itens_disponiveis)
-    # O botão de envio atrelado diretamente à variável do formulário
     botao_enviar = form1.form_submit_button("Confirmar meu Item! 🤠")
     
     if botao_enviar:
@@ -107,13 +110,12 @@ if itens_disponiveis:
             st.rerun()
 else:
     form1.write("🥳 Todos os itens já foram preenchidos!")
-    # Formulários vazios ainda precisam de um botão para não gerarem erro de compilação
     form1.form_submit_button("Atualizar Lista 🔄")
 
 st.divider()
 
 # =========================================================================
-# FORMULÁRIO 2: INCLUIR NOVO ITEM
+# FORMULÁRIO 2: INCLUIR NOVO ITEM QUE NÃO ESTAVA NA LISTA
 # =========================================================================
 st.subheader("➕ O que você quer trazer não está na lista?")
 st.write("Adicione um novo item e coloque seu nome como responsável!")
