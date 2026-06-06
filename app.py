@@ -10,38 +10,48 @@ st.markdown("#### 🔥 Confraternização São João YOGA! 🍿")
 st.write("Escolha o que você vai trazer para a nossa festa junina!")
 
 # =========================================================================
-# CONFIGURAÇÃO DO BANCO DE DADOS (RENDER VS LOCAL)
+# CONFIGURAÇÃO ULTRA-SEGURA DO BANCO DE DADOS
 # =========================================================================
-# 1. Tenta buscar primeiro nas variáveis de ambiente do Render
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# 1. Tenta ler o link puro do banco do Render
+link_banco = os.environ.get("DATABASE_URL")
 
-# 2. Se não achar (ambiente local), busca no arquivo .streamlit/secrets.toml
-if not DATABASE_URL:
+# 2. Se o Render devolver um objeto esquisito ou texto inválido, limpamos
+if not link_banco or not str(link_banco).startswith("postgres"):
     try:
-        DATABASE_URL = st.secrets["DATABASE_URL"]
-    except (KeyError, FileNotFoundErr):
-        st.error("Erro: A configuração do banco de dados (DATABASE_URL) não foi encontrada!")
-        st.stop()
+        # Tenta ler do secrets local do seu computador
+        link_banco = st.secrets["DATABASE_URL"]
+    except Exception:
+        # SE TUDO FALHAR NO RENDER: Cole o seu link do banco direto aqui como última saída!
+        # Começa com: "postgresql://..."
+        link_banco = "COLE_AQUI_SUA_INTERNAL_DATABASE_URL_SE_DER_ERRO"
+
+# Garante que o link seja uma string limpa (remove espaços ou quebras de linha acidentais)
+DATABASE_URL = str(link_banco).strip()
 
 def executar_query(query, retorno=False, valores=None):
     """Função auxiliar para conectar e rodar comandos no banco"""
-    conn = psycopg2.connect(DATABASE_URL)
-    cur = conn.cursor()
-    if valores:
-        cur.execute(query, valores)
-    else:
-        cur.execute(query)
-    
-    resultado = None
-    if retorno:
-        resultado = cur.fetchall()
-        colunas = [desc[0] for desc in cur.description]
-        resultado = pd.DataFrame(resultado, columns=colunas)
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        if valores:
+            cur.execute(query, valores)
+        else:
+            cur.execute(query)
         
-    conn.commit()
-    cur.close()
-    conn.close()
-    return resultado
+        resultado = None
+        if retorno:
+            resultado = cur.fetchall()
+            colunas = [desc[0] for desc in cur.description]
+            resultado = pd.DataFrame(resultado, columns=colunas)
+            
+        conn.commit()
+        cur.close()
+        conn.close()
+        return resultado
+    except Exception as e:
+        st.error(f"Erro de conexão com o Banco de Dados: {e}")
+        st.info(f"O link que o sistema tentou usar começa com: {DATABASE_URL[:20]}...")
+        st.stop()
 
 # =========================================================================
 # ESTRUTURAÇÃO DO BANCO (CRIAÇÃO E POVOAMENTO INICIAL)
@@ -57,7 +67,7 @@ executar_query("""
 
 # Povoa o banco com a pré-lista na primeira vez que o sistema rodar
 df_verificacao = executar_query("SELECT * FROM itens_festa", retorno=True)
-if df_verificacao.empty:
+if df_verificacao is not None and df_verificacao.empty:
     itens_iniciais = [
         "Bolo de Fubá", "Canjica/Canjiquinha", "Pamonha", "Laranja", 
         "Quentão", "Refrigerante", "Salgados", "Doces Juninos (Paçoca/Pé de Moleque)"
@@ -67,6 +77,11 @@ if df_verificacao.empty:
 
 # Carrega os dados atualizados para exibir na tela
 df = executar_query("SELECT item AS \"Item\", responsavel AS \"Responsável\" FROM itens_festa ORDER BY id", retorno=True)
+
+# Se o banco falhar, evita que o resto do código quebre
+if df is None:
+    st.warning("Não foi possível carregar a lista de itens.")
+    st.stop()
 
 # Exibir a tabela atual de contribuições
 st.markdown("#### 📋 Lista de Comes & Bebes")
