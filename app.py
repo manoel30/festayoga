@@ -19,7 +19,7 @@ if not DATABASE_URL:
         DATABASE_URL = st.secrets["DATABASE_URL"]
     except Exception:
         # Se falhar no local e no Render, mude a string abaixo para o seu link real do banco
-        DATABASE_URL = "COLE_AQUI_SUA_INTERNAL_DATABASE_URL_SE_DER_ERRO"
+        DATABASE_URL = "postgresql://banco_gestao_mh_user:7nDZqiN920jZKUiyssC5O3JtG9azi0aM@dpg-d8b35b4m0tmc73d5ovog-a.virginia-postgres.render.com:5432/arraia_db"
 
 def executar_query(query, retorno=False, valores=None):
     try:
