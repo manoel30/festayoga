@@ -10,20 +10,21 @@ st.markdown("#### 🔥 Confraternização São João YOGA! 🍿")
 st.write("Escolha o que você vai trazer para a nossa festa junina!")
 
 # =========================================================================
+# CONFIGURAÇÃO DO BANCO DE DADOS (CORRIGIDA)
 # =========================================================================
-# CONFIGURAÇÃO DO BANCO DE DADOS
-# =========================================================================
-# O Render injeta isso automaticamente se você cadastrou na aba Environment
-DATABASE_URL = os.environ.get("DATABASE_URL")
+env_value = os.environ.get("DATABASE_URL")
 
-if not DATABASE_URL:
+# Se o Render trouxer vazio, ou trouxer o texto "DATABASE_URL", ou não começar com postgres
+if not env_value or env_value == "DATABASE_URL" or not str(env_value).startswith("postgres"):
     try:
         DATABASE_URL = st.secrets["DATABASE_URL"]
     except Exception:
-        # COLE AQUI A "INTERNAL DATABASE URL" QUE VOCÊ COPIOU DO RENDER
-        DATABASE_URL = "SUA_INTERNAL_DATABASE_URL_AQUI"
+        # Link Direto (Use a INTERNAL DATABASE URL se estiver no Render)
+        DATABASE_URL = "postgresql://banco_gestao_mh_user:7nDZqiN920jZKUiyssC5O3JtG9azi0aM@dpg-d8b35b4m0tmc73d5ovog-a.virginia-postgres.render.com:5432/arraia_db"
+else:
+    DATABASE_URL = env_value
 
-# Força a conversão para string limpa para o psycopg2 não se perder
+# Garante que seja uma string limpa e sem espaços
 DATABASE_URL = str(DATABASE_URL).strip()
 
 def executar_query(query, retorno=False, valores=None):
