@@ -9,8 +9,19 @@ st.set_page_config(page_title="Arraiá do Grupo! 🌽", page_icon="🔥", layout
 st.markdown("#### 🔥 Confraternização São João YOGA! 🍿")
 st.write("Escolha o que você vai trazer para a nossa festa junina!")
 
-# Identifica o banco (Render ou Máquina Local)
-DATABASE_URL = os.environ.get("DATABASE_URL") or st.secrets.get("DATABASE_URL")
+# =========================================================================
+# CONFIGURAÇÃO DO BANCO DE DADOS (RENDER VS LOCAL)
+# =========================================================================
+# 1. Tenta buscar primeiro nas variáveis de ambiente do Render
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# 2. Se não achar (ambiente local), busca no arquivo .streamlit/secrets.toml
+if not DATABASE_URL:
+    try:
+        DATABASE_URL = st.secrets["DATABASE_URL"]
+    except (KeyError, FileNotFoundErr):
+        st.error("Erro: A configuração do banco de dados (DATABASE_URL) não foi encontrada!")
+        st.stop()
 
 def executar_query(query, retorno=False, valores=None):
     """Função auxiliar para conectar e rodar comandos no banco"""
@@ -32,7 +43,10 @@ def executar_query(query, retorno=False, valores=None):
     conn.close()
     return resultado
 
-# Cria a tabela automaticamente se não existir
+# =========================================================================
+# ESTRUTURAÇÃO DO BANCO (CRIAÇÃO E POVOAMENTO INICIAL)
+# =========================================================================
+# Cria a tabela automaticamente se não existir no banco conectado
 executar_query("""
     CREATE TABLE IF NOT EXISTS itens_festa (
         id SERIAL PRIMARY KEY,
@@ -41,7 +55,7 @@ executar_query("""
     )
 """)
 
-# Povoa o banco com os itens na primeira vez
+# Povoa o banco com a pré-lista na primeira vez que o sistema rodar
 df_verificacao = executar_query("SELECT * FROM itens_festa", retorno=True)
 if df_verificacao.empty:
     itens_iniciais = [
@@ -51,7 +65,7 @@ if df_verificacao.empty:
     for item in itens_iniciais:
         executar_query("INSERT INTO itens_festa (item) VALUES (%s)", valores=(item,))
 
-# Carrega os dados atualizados
+# Carrega os dados atualizados para exibir na tela
 df = executar_query("SELECT item AS \"Item\", responsavel AS \"Responsável\" FROM itens_festa ORDER BY id", retorno=True)
 
 # Exibir a tabela atual de contribuições
@@ -60,9 +74,9 @@ st.dataframe(df, use_container_width=True)
 
 st.divider()
 
-# ==========================================
-# FORMULÁRIO 1: ESCOLHER ITEM EXISTENTE
-# ==========================================
+# =========================================================================
+# FORMULÁRIO 1: ESCOLHER ITEM EXISTENTE DA PRÉ-LISTA
+# =========================================================================
 st.subheader("🙋‍♂️ Quero Contribuir com a Lista!")
 
 with st.form(key="form_festa"):
@@ -79,7 +93,7 @@ with st.form(key="form_festa"):
             else:
                 executar_query(
                     "UPDATE itens_festa SET responsavel = %s WHERE item = %s",
-                    valores=(nome, item_escolhido)
+                    valores=(nome.strip(), item_escolhido)
                 )
                 st.success(f"Uai, que beleza! {nome} garantiu o/a {item_escolhido}! 🎉")
                 st.rerun()
@@ -88,9 +102,9 @@ with st.form(key="form_festa"):
 
 st.divider()
 
-# ==========================================
-# FORMULÁRIO 2: ADICIONAR NOVO ITEM À LISTA
-# ==========================================
+# =========================================================================
+# FORMULÁRIO 2: INCLUIR UM NOVO ITEM QUE NÃO ESTAVA NA LISTA
+# =========================================================================
 st.subheader("➕ O que você quer trazer não está na lista?")
 st.write("Adicione um novo item e coloque seu nome como responsável de uma vez só!")
 
@@ -103,13 +117,13 @@ with st.form(key="form_novo_item"):
         if seu_nome_novo.strip() == "" or novo_item_sugerido.strip() == "":
             st.error("Por favor, preencha o seu nome e o nome do item!")
         else:
-            # Verifica se o item já não existe na tabela (ignora maiúsculas/minúsculas)
+            # Evita que adicionem itens duplicados (ignora maiúsculas/minúsculas)
             item_existe = df[df["Item"].str.lower() == novo_item_sugerido.strip().lower()]
             
             if not item_existe.empty:
-                st.warning(f"O item '{novo_item_sugerido}' já existe na lista!")
+                st.warning(f"O item '{novo_item_sugerido}' já existe na lista lá em cima!")
             else:
-                # Insere o novo item associando diretamente à pessoa que o criou
+                # Insere o novo prato já associado diretamente à pessoa
                 executar_query(
                     "INSERT INTO itens_festa (item, responsavel) VALUES (%s, %s)",
                     valores=(novo_item_sugerido.strip(), seu_nome_novo.strip())
