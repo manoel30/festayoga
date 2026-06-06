@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
-from streamlit_gsheets import GSheetsConnection
+import psycopg2
+import os
 
 # Configuração da página
 st.set_page_config(page_title="Arraiá do Grupo! 🌽", page_icon="🔥", layout="centered")
@@ -8,14 +9,50 @@ st.set_page_config(page_title="Arraiá do Grupo! 🌽", page_icon="🔥", layout
 st.markdown("#### 🔥 Confraternização São João YOGA! 🍿")
 st.write("Escolha o que você vai trazer para a nossa festa junina!")
 
-# 1. Estabelece a conexão básica
-conn = st.connection("gsheets", type=GSheetsConnection)
+# Identifica o banco (Render ou Máquina Local)
+DATABASE_URL = os.environ.get("DATABASE_URL") or st.secrets.get("DATABASE_URL")
 
-# 2. COLE O LINK DA SUA PLANILHA AQUI ABAIXO:
-URL_DA_PLANILHA = "https://docs.google.com/spreadsheets/d/1ONeix1YCJllovKWUCy927FvflphfVl4RxWC933kxqGg/edit?gid=0#gid=0"
+def executar_query(query, retorno=False, valores=None):
+    """Função auxiliar para conectar e rodar comandos no banco"""
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+    if valores:
+        cur.execute(query, valores)
+    else:
+        cur.execute(query)
+    
+    resultado = None
+    if retorno:
+        resultado = cur.fetchall()
+        colunas = [desc[0] for desc in cur.description]
+        resultado = pd.DataFrame(resultado, columns=colunas)
+        
+    conn.commit()
+    cur.close()
+    conn.close()
+    return resultado
 
-# 3. Lê os dados passando a URL diretamente como argumento
-df = conn.read(spreadsheet=URL_DA_PLANILHA, ttl=0)
+# Cria a tabela automaticamente se não existir
+executar_query("""
+    CREATE TABLE IF NOT EXISTS itens_festa (
+        id SERIAL PRIMARY KEY,
+        item VARCHAR(200) NOT NULL,
+        responsavel VARCHAR(200) DEFAULT 'Disponível'
+    )
+""")
+
+# Povoa o banco com os itens na primeira vez
+df_verificacao = executar_query("SELECT * FROM itens_festa", retorno=True)
+if df_verificacao.empty:
+    itens_iniciais = [
+        "Bolo de Fubá", "Canjica/Canjiquinha", "Pamonha", "Laranja", 
+        "Quentão", "Refrigerante", "Salgados", "Doces Juninos (Paçoca/Pé de Moleque)"
+    ]
+    for item in itens_iniciais:
+        executar_query("INSERT INTO itens_festa (item) VALUES (%s)", valores=(item,))
+
+# Carrega os dados atualizados
+df = executar_query("SELECT item AS \"Item\", responsavel AS \"Responsável\" FROM itens_festa ORDER BY id", retorno=True)
 
 # Exibir a tabela atual de contribuições
 st.markdown("#### 📋 Lista de Comes & Bebes")
@@ -23,13 +60,13 @@ st.dataframe(df, use_container_width=True)
 
 st.divider()
 
-st.subheader("🙋‍♂️ Quero Contribuir!")
+# ==========================================
+# FORMULÁRIO 1: ESCOLHER ITEM EXISTENTE
+# ==========================================
+st.subheader("🙋‍♂️ Quero Contribuir com a Lista!")
 
-# Formulário para o usuário preencher
 with st.form(key="form_festa"):
     nome = st.text_input("Qual é o seu nome?")
-    
-    # Filtra apenas os itens que ainda estão "Disponíveis"
     itens_disponiveis = df[df["Responsável"] == "Disponível"]["Item"].tolist()
     
     if itens_disponiveis:
@@ -40,13 +77,42 @@ with st.form(key="form_festa"):
             if nome.strip() == "":
                 st.error("Por favor, digite seu nome para confirmar!")
             else:
-                # Atualiza o dataframe na memória
-                df.loc[df["Item"] == item_escolhido, "Responsável"] = nome
-                
-                # 4. Salva de volta na planilha passando a URL explicitamente também
-                conn.update(spreadsheet=URL_DA_PLANILHA, data=df)
-                
+                executar_query(
+                    "UPDATE itens_festa SET responsavel = %s WHERE item = %s",
+                    valores=(nome, item_escolhido)
+                )
                 st.success(f"Uai, que beleza! {nome} garantiu o/a {item_escolhido}! 🎉")
                 st.rerun()
     else:
-        st.write("🥳 Eita! Todos os itens já foram preenchidos! Obrigado, pessoal!")
+        st.write("🥳 Eita! Todos os itens sugeridos já foram preenchidos!")
+
+st.divider()
+
+# ==========================================
+# FORMULÁRIO 2: ADICIONAR NOVO ITEM À LISTA
+# ==========================================
+st.subheader("➕ O que você quer trazer não está na lista?")
+st.write("Adicione um novo item e coloque seu nome como responsável de uma vez só!")
+
+with st.form(key="form_novo_item"):
+    seu_nome_novo = st.text_input("Qual é o seu nome? (Novo Item)")
+    novo_item_sugerido = st.text_input("Qual prato ou bebida quer adicionar?")
+    botao_adicionar = st.form_submit_button("Adicionar à Lista! 🚀")
+    
+    if botao_adicionar:
+        if seu_nome_novo.strip() == "" or novo_item_sugerido.strip() == "":
+            st.error("Por favor, preencha o seu nome e o nome do item!")
+        else:
+            # Verifica se o item já não existe na tabela (ignora maiúsculas/minúsculas)
+            item_existe = df[df["Item"].str.lower() == novo_item_sugerido.strip().lower()]
+            
+            if not item_existe.empty:
+                st.warning(f"O item '{novo_item_sugerido}' já existe na lista!")
+            else:
+                # Insere o novo item associando diretamente à pessoa que o criou
+                executar_query(
+                    "INSERT INTO itens_festa (item, responsavel) VALUES (%s, %s)",
+                    valores=(novo_item_sugerido.strip(), seu_nome_novo.strip())
+                )
+                st.success(f"Uai, que chique! '{novo_item_sugerido}' foi adicionado e reservado para {seu_nome_novo}! 🌽")
+                st.rerun()
