@@ -23,7 +23,7 @@ if not link_banco or not str(link_banco).startswith("postgres"):
     except Exception:
         # SE TUDO FALHAR NO RENDER: Cole o seu link do banco direto aqui como última saída!
         # Começa com: "postgresql://..."
-        link_banco = "COLE_AQUI_SUA_INTERNAL_DATABASE_URL_SE_DER_ERRO"
+        link_banco = "postgresql://banco_gestao_mh_user:7nDZqiN920jZKUiyssC5O3JtG9azi0aM@dpg-d8b35b4m0tmc73d5ovog-a.virginia-postgres.render.com:5432/arraia_db"
 
 # Garante que o link seja uma string limpa (remove espaços ou quebras de linha acidentais)
 DATABASE_URL = str(link_banco).strip()
