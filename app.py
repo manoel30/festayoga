@@ -10,28 +10,20 @@ st.markdown("#### 🔥 Confraternização São João YOGA! 🍿")
 st.write("Escolha o que você vai trazer para a nossa festa junina!")
 
 # =========================================================================
-# CONFIGURAÇÃO ULTRA-SEGURA DO BANCO DE DADOS
+# CONFIGURAÇÃO DO BANCO DE DADOS
 # =========================================================================
-# 1. Tenta ler o link puro do banco do Render
-link_banco = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# 2. Se o Render devolver um objeto esquisito ou texto inválido, limpamos
-if not link_banco or not str(link_banco).startswith("postgres"):
+if not DATABASE_URL:
     try:
-        # Tenta ler do secrets local do seu computador
-        link_banco = st.secrets["DATABASE_URL"]
+        DATABASE_URL = st.secrets["DATABASE_URL"]
     except Exception:
-        # SE TUDO FALHAR NO RENDER: Cole o seu link do banco direto aqui como última saída!
-        # Começa com: "postgresql://..."
-        link_banco = "postgresql://banco_gestao_mh_user:7nDZqiN920jZKUiyssC5O3JtG9azi0aM@dpg-d8b35b4m0tmc73d5ovog-a.virginia-postgres.render.com:5432/arraia_db"
-
-# Garante que o link seja uma string limpa (remove espaços ou quebras de linha acidentais)
-DATABASE_URL = str(link_banco).strip()
+        # Se falhar no local e no Render, mude a string abaixo para o seu link real do banco
+        DATABASE_URL = "COLE_AQUI_SUA_INTERNAL_DATABASE_URL_SE_DER_ERRO"
 
 def executar_query(query, retorno=False, valores=None):
-    """Função auxiliar para conectar e rodar comandos no banco"""
     try:
-        conn = psycopg2.connect(DATABASE_URL)
+        conn = psycopg2.connect(str(DATABASE_URL).strip())
         cur = conn.cursor()
         if valores:
             cur.execute(query, valores)
@@ -49,14 +41,10 @@ def executar_query(query, retorno=False, valores=None):
         conn.close()
         return resultado
     except Exception as e:
-        st.error(f"Erro de conexão com o Banco de Dados: {e}")
-        st.info(f"O link que o sistema tentou usar começa com: {DATABASE_URL[:20]}...")
+        st.error(f"Erro no banco: {e}")
         st.stop()
 
-# =========================================================================
-# ESTRUTURAÇÃO DO BANCO (CRIAÇÃO E POVOAMENTO INICIAL)
-# =========================================================================
-# Cria a tabela automaticamente se não existir no banco conectado
+# Garantir existência da tabela
 executar_query("""
     CREATE TABLE IF NOT EXISTS itens_festa (
         id SERIAL PRIMARY KEY,
@@ -65,7 +53,7 @@ executar_query("""
     )
 """)
 
-# Povoa o banco com a pré-lista na primeira vez que o sistema rodar
+# Povoamento inicial se vazio
 df_verificacao = executar_query("SELECT * FROM itens_festa", retorno=True)
 if df_verificacao is not None and df_verificacao.empty:
     itens_iniciais = [
@@ -75,73 +63,71 @@ if df_verificacao is not None and df_verificacao.empty:
     for item in itens_iniciais:
         executar_query("INSERT INTO itens_festa (item) VALUES (%s)", valores=(item,))
 
-# Carrega os dados atualizados para exibir na tela
+# Carregar dados atualizados
 df = executar_query("SELECT item AS \"Item\", responsavel AS \"Responsável\" FROM itens_festa ORDER BY id", retorno=True)
 
-# Se o banco falhar, evita que o resto do código quebre
 if df is None:
-    st.warning("Não foi possível carregar a lista de itens.")
     st.stop()
 
-# Exibir a tabela atual de contribuições
+# Mostrar a tabela
 st.markdown("#### 📋 Lista de Comes & Bebes")
 st.dataframe(df, use_container_width=True)
 
 st.divider()
 
 # =========================================================================
-# FORMULÁRIO 1: ESCOLHER ITEM EXISTENTE DA PRÉ-LISTA
+# FORMULÁRIO 1: ESCOLHER ITEM EXISTENTE
 # =========================================================================
 st.subheader("🙋‍♂️ Quero Contribuir com a Lista!")
 
-with st.form(key="form_festa"):
-    nome = st.text_input("Qual é o seu nome?")
-    itens_disponiveis = df[df["Responsável"] == "Disponível"]["Item"].tolist()
+form1 = st.form(key="meu_form_festa")
+nome = form1.text_input("Qual é o seu nome?")
+itens_disponiveis = df[df["Responsável"] == "Disponível"]["Item"].tolist()
+
+if itens_disponiveis:
+    item_escolhido = form1.selectbox("O que você vai levar?", itens_disponiveis)
+    # O botão de envio atrelado diretamente à variável do formulário
+    botao_enviar = form1.form_submit_button("Confirmar meu Item! 🤠")
     
-    if itens_disponiveis:
-        item_escolhido = st.selectbox("O que você vai levar?", itens_disponiveis)
-        botao_enviar = st.form_submit_button("Confirmar meu Item! 🤠")
-        
-        if botao_enviar:
-            if nome.strip() == "":
-                st.error("Por favor, digite seu nome para confirmar!")
-            else:
-                executar_query(
-                    "UPDATE itens_festa SET responsavel = %s WHERE item = %s",
-                    valores=(nome.strip(), item_escolhido)
-                )
-                st.success(f"Uai, que beleza! {nome} garantiu o/a {item_escolhido}! 🎉")
-                st.rerun()
-    else:
-        st.write("🥳 Eita! Todos os itens sugeridos já foram preenchidos!")
+    if botao_enviar:
+        if nome.strip() == "":
+            st.error("Por favor, digite seu nome para confirmar!")
+        else:
+            executar_query(
+                "UPDATE itens_festa SET responsavel = %s WHERE item = %s",
+                valores=(nome.strip(), item_escolhido)
+            )
+            st.success(f"Uai, que beleza! {nome} garantiu o/a {item_escolhido}! 🎉")
+            st.rerun()
+else:
+    form1.write("🥳 Todos os itens já foram preenchidos!")
+    # Formulários vazios ainda precisam de um botão para não gerarem erro de compilação
+    form1.form_submit_button("Atualizar Lista 🔄")
 
 st.divider()
 
 # =========================================================================
-# FORMULÁRIO 2: INCLUIR UM NOVO ITEM QUE NÃO ESTAVA NA LISTA
+# FORMULÁRIO 2: INCLUIR NOVO ITEM
 # =========================================================================
 st.subheader("➕ O que você quer trazer não está na lista?")
-st.write("Adicione um novo item e coloque seu nome como responsável de uma vez só!")
+st.write("Adicione um novo item e coloque seu nome como responsável!")
 
-with st.form(key="form_novo_item"):
-    seu_nome_novo = st.text_input("Qual é o seu nome? (Novo Item)")
-    novo_item_sugerido = st.text_input("Qual prato ou bebida quer adicionar?")
-    botao_adicionar = st.form_submit_button("Adicionar à Lista! 🚀")
-    
-    if botao_adicionar:
-        if seu_nome_novo.strip() == "" or novo_item_sugerido.strip() == "":
-            st.error("Por favor, preencha o seu nome e o nome do item!")
+form2 = st.form(key="meu_form_novo_item")
+seu_nome_novo = form2.text_input("Qual é o seu nome? (Novo Item)")
+novo_item_sugerido = form2.text_input("Qual prato ou bebida quer adicionar?")
+botao_adicionar = form2.form_submit_button("Adicionar à Lista! 🚀")
+
+if botao_adicionar:
+    if seu_nome_novo.strip() == "" or novo_item_sugerido.strip() == "":
+        st.error("Por favor, preencha o seu nome e o nome do item!")
+    else:
+        item_existe = df[df["Item"].str.lower() == novo_item_sugerido.strip().lower()]
+        if not item_existe.empty:
+            st.warning(f"O item '{novo_item_sugerido}' já existe na lista!")
         else:
-            # Evita que adicionem itens duplicados (ignora maiúsculas/minúsculas)
-            item_existe = df[df["Item"].str.lower() == novo_item_sugerido.strip().lower()]
-            
-            if not item_existe.empty:
-                st.warning(f"O item '{novo_item_sugerido}' já existe na lista lá em cima!")
-            else:
-                # Insere o novo prato já associado diretamente à pessoa
-                executar_query(
-                    "INSERT INTO itens_festa (item, responsavel) VALUES (%s, %s)",
-                    valores=(novo_item_sugerido.strip(), seu_nome_novo.strip())
-                )
-                st.success(f"Uai, que chique! '{novo_item_sugerido}' foi adicionado e reservado para {seu_nome_novo}! 🌽")
-                st.rerun()
+            executar_query(
+                "INSERT INTO itens_festa (item, responsavel) VALUES (%s, %s)",
+                valores=(novo_item_sugerido.strip(), seu_nome_novo.strip())
+            )
+            st.success(f"'{novo_item_sugerido}' foi adicionado por {seu_nome_novo}! 🌽")
+            st.rerun()
